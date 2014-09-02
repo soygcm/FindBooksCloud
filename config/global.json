@@ -1,0 +1,14 @@
+{
+    "applications": {
+        "FindBooks": {
+            "applicationId": "C4zgFUST9RGWSJ5scVpyB5G4co2gcMUpNPg0QpaI", 
+            "masterKey": "QLg19MS6DsPt45z7KNpY9ga2pKR98I3JeY6iFu3l"
+        }, 
+        "_default": {
+            "link": "FindBooks"
+        }
+    }, 
+    "global": {
+        "parseVersion": "1.2.1"
+    }
+}
