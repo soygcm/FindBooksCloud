@@ -64,6 +64,9 @@ var BookCollection = Parse.Collection.extend({
 				'Content-Type': 'application/json;charset=utf-8'
 			},
 			success 	: function(httpResponse) {
+
+                console.log("1 ------ FB: success Cloud.httpRequest")
+
 				self.fetchCallback(httpResponse.data, options)
 			},
 			error 	: function(httpResponse) {
@@ -110,8 +113,6 @@ var BookCollection = Parse.Collection.extend({
     //request Google Books Success
     fetchCallback: function(response, options) {
 
-    	console.log("FB calling fetchCallback")
-
         var self = this
         var googleIds = this.googleIds(response)
 
@@ -119,21 +120,25 @@ var BookCollection = Parse.Collection.extend({
 		query.containedIn("idGBook", googleIds)
 		query.find().then(function(results) {
 
-			console.log("FB finding existents: "+ results.length)
+			console.log("2 ------ FB: finding existents: "+ results.length)
 
 			//Increment existent books and Replace into search
-			for (var i = 0, end = results.length; i < end; i++) {
+			for (var i = 0, endI = results.length; i < endI; i++) {
 				var newBook = results[i]
-				newBook.increment("searchGBook")
 
-				for (var j = 0, end = response.items.length; j < end; j++) {
+				for (var j = 0, endJ = response.items.length; j < endJ; j++) {
         			var book = response.items[j]
-        			if (book.id == newBook.get('idGBook')) {
-        				console.log("FB Replace from google results: "+j+": "+book.volumeInfo.title)
-        				console.log(response.items[j])
-        				response.items[j] = newBook
-        				console.log(response.items[j])
-        			}
+
+
+                    if (!(book instanceof Book) && book.id == newBook.get('idGBook')) {
+                    
+                        console.log("3."+i+"."+j+" ------ FB: compare: "+ newBook.get('idGBook') +", "+ book.id+", "+ (book instanceof Book))
+                        
+                        console.log("3."+i+"."+j+" ------ FB: Replace from google results: "+newBook.get('title'))
+                        
+                        response.items[j] = newBook
+                        // response.items[j].increment("searchGBook")
+                    }
         		}
 			}
 
@@ -146,7 +151,7 @@ var BookCollection = Parse.Collection.extend({
         		console.log(book)
         		var newBook
         		
-        		if (book.objectId) {
+        		if (book instanceof Book) {
         			newBook = book
         			existent++
         		}else{
@@ -155,7 +160,7 @@ var BookCollection = Parse.Collection.extend({
             	self.add(newBook)
         	}
 
-        	console.log("FB previous existent: "+ existent)
+        	console.log("5 ------ FB: previous existent: "+ existent)
         
         	self.successGoogle = true
         	self.successEnd(options)
