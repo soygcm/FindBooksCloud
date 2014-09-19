@@ -1,37 +1,133 @@
 var _ = require('underscore')
+var fb = require('cloud/pattern-order.js')
+
+var Book = Parse.Object.extend("Book")
+var BookVersion = Parse.Object.extend("BookVersion")
+
 
 Parse.Cloud.beforeSave("Book", function(request, response) {
-	var picture = request.object.get("picture")
-	if (picture) {
 
-		console.log("Hacer halgo con la imagen")
+    // Comprimir y cortar la imagen de los libros:
 
-		response.success()
-	
-	}else{
+    ;
 
-		response.success()
-		
-	}
 
+    if ( (  request.object.dirty("title")    
+         || request.object.dirty("subtitle")
+         || request.object.dirty("authors")   )
+         && !request.object.get("noVersion")    ){
+
+        //Crear las palabras para la busqueda:
+        var book = request.object;
+
+        var title = book.get("title") || ""
+        var subtitle = book.get("subtitle") || ""
+        var authors = book.get("authors") || []
+ 
+        var words = title.split(/\s+/)
+        words = words.concat( subtitle.split(/\s+/) )
+        _.each(authors, function (str) {
+            words = words.concat( str.split(/\s+/) )
+        })
+
+        words = _.map(words, fb.removeDiacritics)
+        words = _.map(words, fb.toLowerCase)
+ 
+        book.set("words", words)
+
+        // Es necesario hacer una nueva version:
+        book.set("newVersion", true)
+        response.success()
+
+    }else{
+
+        request.object.set("newVersion", false)
+        response.success()
+
+    }
 
 })
+
+
+Parse.Cloud.afterSave("Book", function(request) {
+
+    // Guardar una Revision con los campos repetidos del libro que se acaba de guardar, hacerlo si es nuevo y si es un update.
+
+    // Hacer esto solo cuando los campos "metadata" han sido modificadoss. 
+
+    if ( request.object.get("newVersion") ){
+
+        // duplicar los campos:
+        var bookVersion = new BookVersion()
+
+        var title = request.object.get("title")
+        var subtitle = request.object.get("subtitle")
+        var authors = request.object.get("authors")
+        var words = request.object.get("words")
+
+        bookVersion.set("title", title)
+        bookVersion.set("subtitle", subtitle)
+        bookVersion.set("authors", authors)
+        bookVersion.set("words", words)
+
+        // Si es un nuevo libro, poner la version de el libro y el BookVersion en 0:
+        if (!request.object.existed()) {
+            bookVersion.set("version", 0)
+            request.object.set("version", 0)
+
+        }
+
+        // Si es un update de un libro, se aumenta la version en +1:
+        else{
+            var version = request.object.get("version")
+            bookVersion.set("version", version+1)
+            request.object.set("version", version+1)
+
+        }
+
+        bookVersion.set("book", new Book({id: request.object.id}) )
+        request.object.set("current", bookVersion)
+
+        bookVersion.save().then(function  (bookVersion) {
+            
+            request.object.save()
+
+        }, function (error) {
+           console.log(error)
+        })
+
+
+    }
+
+})
+
 
 Parse.Cloud.define("search", function(request, response) {
 
 	this.bookCollection = new BookCollection()
 	this.bookCollection.query = request.params.query
     this.bookCollection.fetch({
-        success:function(collection){
+        success:function(collection, existent){
 
-        	Parse.Object.saveAll(collection, {
-			    success: function(list) {
-			    	response.success(collection)
-			    },
-			    error: function(error) {
-			    	response.error(error)
-			    },
-			})
+            // if (existent >= collection.length) {
+
+            //     console.log("------ ahorrar un request")
+            //     response.success(collection)
+
+            // }else{
+
+                Parse.Object.saveAll(collection, {
+                    success: function(list) {
+                        response.success(collection)
+                    },
+                    error: function(error) {
+                        response.error(error)
+                    },
+                })
+
+            // }
+
+        	
 
         },
         error: function (collection, error) {
@@ -41,13 +137,12 @@ Parse.Cloud.define("search", function(request, response) {
 
 })
 
-var Book = Parse.Object.extend("Book")
-
 var BookCollection = Parse.Collection.extend({
     model: Book,
     query: '',
-    successParse: true,
+    successParse: false,
     successGoogle: false,
+    preExistent: 0,
     url: "https://www.googleapis.com/books/v1/volumes",
     fetch: function(options) {
         var self = this
@@ -56,51 +151,58 @@ var BookCollection = Parse.Collection.extend({
         //Get Google
         Parse.Cloud.httpRequest({
 			url : this.url,
-			params 	: {
+			params: {
 				q : this.query,
 				maxResults	: 5
 			},
 			headers: {
 				'Content-Type': 'application/json;charset=utf-8'
 			},
-			success 	: function(httpResponse) {
-
-                console.log("1 ------ FB: success Cloud.httpRequest")
-
+			success: function(httpResponse) {
 				self.fetchCallback(httpResponse.data, options)
 			},
-			error 	: function(httpResponse) {
+			error: function(httpResponse) {
 				console.error('Request failed with response code ' + httpResponse.status)
 			}
 		})
 
         //Get Parse 
-        /*console.log(this.query, makePattern(this.query))
         var query = new Parse.Query(Book)
-        query.matches("title", makePattern(this.query))
+
+        var words = this.query.split(/\s+/)
+        words = _.map(words, fb.removeDiacritics)
+        words = _.map(words, fb.toLowerCase) 
+
+        // query.matches("title", fb.makePattern(this.query))
+        query.containsAll("words", words)
+
+        query.doesNotExist("idGBook")
         query.find({
-          success: function(results) {
 
-            results = orderResults(results, self.query)
-            results.splice(5,results.length)
-            self.add(results, {silent: true})
-            self.successParse = true
-            self.success(options)
-          },
-          error: function(error) {
-            alert("Error: " + error.code + " " + error.message)
-          }
+            success: function(results) {
+                // results = fb.orderResults(results, self.query)
+                results.splice(5, results.length)
+                self.add(results)
+                self.preExistent += results.length
+                self.successParse = true
+                self.successEnd(options)
+            },
+
+            error: function(error) {
+                alert("Error: " + error.code + " " + error.message)
+            }
+
         })
-        */
-
-    },
-    successEnd: function(options){
-
-        if(this.successParse && this.successGoogle){
-            options.success(this)
-        }
         
+
     },
+
+    successEnd: function(options){
+        if(this.successParse && this.successGoogle){
+            options.success(this, this.preExistent)
+        }
+    },
+
     googleIds: function (response) {
     	var googleIds = new Array()
     	for (var i = 0, end = response.items.length; i < end; i++) {
@@ -120,7 +222,7 @@ var BookCollection = Parse.Collection.extend({
 		query.containedIn("idGBook", googleIds)
 		query.find().then(function(results) {
 
-			console.log("2 ------ FB: finding existents: "+ results.length)
+			// console.log("2 ------ FB: finding existents: "+ results.length)
 
 			//Increment existent books and Replace into search
 			for (var i = 0, endI = results.length; i < endI; i++) {
@@ -129,15 +231,8 @@ var BookCollection = Parse.Collection.extend({
 				for (var j = 0, endJ = response.items.length; j < endJ; j++) {
         			var book = response.items[j]
 
-
                     if (!(book instanceof Book) && book.id == newBook.get('idGBook')) {
-                    
-                        console.log("3."+i+"."+j+" ------ FB: compare: "+ newBook.get('idGBook') +", "+ book.id+", "+ (book instanceof Book))
-                        
-                        console.log("3."+i+"."+j+" ------ FB: Replace from google results: "+newBook.get('title'))
-                        
                         response.items[j] = newBook
-                        // response.items[j].increment("searchGBook")
                     }
         		}
 			}
@@ -148,7 +243,6 @@ var BookCollection = Parse.Collection.extend({
 
 			for (var i = 0, end = response.items.length; i < end; i++) {
         		var book = response.items[i]
-        		console.log(book)
         		var newBook
         		
         		if (book instanceof Book) {
@@ -160,12 +254,11 @@ var BookCollection = Parse.Collection.extend({
             	self.add(newBook)
         	}
 
-        	console.log("5 ------ FB: previous existent: "+ existent)
+        	// console.log("5 ------ FB: previous existent: "+ existent)
         
         	self.successGoogle = true
+            self.preExistent += existent
         	self.successEnd(options)
-
-
 		},
 		function(error) {
 			console.log("Error: " + error.code + " " + error.message)
