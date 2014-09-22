@@ -307,6 +307,9 @@ var BookCollection = Parse.Collection.extend({
 		})
 
     },
+
+    // Agregar un libro desde el api de google.
+
     newBookFromGoogle: function (book) {
 
     	var newBook = new Book()
@@ -317,16 +320,54 @@ var BookCollection = Parse.Collection.extend({
         if (typeof(book.volumeInfo.subtitle) != "undefined"){
             newBook.set('subtitle', book.volumeInfo.subtitle)
         }
-        if (typeof(book.volumeInfo.authors) != "undefined"){
-            newBook.set('authors', book.volumeInfo.authors)
-        }
         if (typeof(book.volumeInfo.imageLinks) != "undefined"){
-            newBook.set('thumbnails', book.volumeInfo.imageLinks)
+            newBook.set('imageLinks', book.volumeInfo.imageLinks)
+        }
+        if (typeof(book.volumeInfo.publisher) != "undefined"){
+            newBook.set('publisher', book.volumeInfo.publisher)
+        }
+        if (typeof(book.volumeInfo.publishedDate) != "undefined"){
+                newBook.set('publishedDate', new Date(book.volumeInfo.publishedDate))
+                newBook.set('publishedDateString', book.volumeInfo.publishedDate)
+
+        }
+        if (typeof(book.volumeInfo.description) != "undefined"){
+            newBook.set('description', book.volumeInfo.description)
+        }
+        if (typeof(book.volumeInfo.industryIdentifiers) != "undefined"){
+            newBook.set('industryIdentifiers', book.volumeInfo.industryIdentifiers)
+        }
+        if (typeof(book.volumeInfo.pageCount) != "undefined"){
+            newBook.set('pageCount', book.volumeInfo.pageCount)
+        }
+        if (typeof(book.volumeInfo.dimensions) != "undefined"){
+            newBook.set('dimensions', book.volumeInfo.dimensions)
+        }
+        if (typeof(book.volumeInfo.verageRating) != "undefined"){
+            newBook.set('verageRating', book.volumeInfo.verageRating)
+        }
+        if (typeof(book.volumeInfo.integer) != "undefined"){
+            newBook.set('integer', book.volumeInfo.integer)
+        }
+        if (typeof(book.volumeInfo.language) != "undefined"){
+            newBook.set('language', book.volumeInfo.language)
         }
 
         if (typeof(book.id) != "undefined"){
             newBook.set('idGBook',  book.id)
         }
+
+        // Aqui en el futuro estos datos seran Relaciones en el modelo de datos:
+        if (typeof(book.volumeInfo.categories) != "undefined"){
+            newBook.set('categories', book.volumeInfo.categories)
+        }
+        if (typeof(book.volumeInfo.mainCategory) != "undefined"){
+            newBook.set('mainCategory', book.volumeInfo.mainCategory)
+        }
+        if (typeof(book.volumeInfo.authors) != "undefined"){
+            newBook.set('authors', book.volumeInfo.authors)
+        }
+        
 
         return newBook
 
