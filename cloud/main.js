@@ -7,41 +7,29 @@ var BookVersion = Parse.Object.extend("BookVersion")
 
 Parse.Cloud.beforeSave("Book", function(request, response) {
 
-    // Comprimir y cortar la imagen de los libros:
+    // Comprimir y cortar la imagen de los libros:;
 
-    ;
+    var book = request.object;
 
-
-    if ( (  request.object.dirty("title")    
+    if (    request.object.dirty("title")    
          || request.object.dirty("subtitle")
-         || request.object.dirty("authors")   )
-         && !request.object.get("noVersion")    ){
+         || request.object.dirty("authors")     ){
 
-        //Crear las palabras para la busqueda:
-        var book = request.object;
+        if (!request.object.get("noVersion")) {
+            // Es necesario hacer una nueva version:
+            book.set("newVersion", true)
+        }else{
+            book.set("newVersion", false)
+        }
 
-        var title = book.get("title") || ""
-        var subtitle = book.get("subtitle") || ""
-        var authors = book.get("authors") || []
- 
-        var words = title.split(/\s+/)
-        words = words.concat( subtitle.split(/\s+/) )
-        _.each(authors, function (str) {
-            words = words.concat( str.split(/\s+/) )
-        })
+        book.set("updatedData", true)
 
-        words = _.map(words, fb.removeDiacritics)
-        words = _.map(words, fb.toLowerCase)
- 
-        book.set("words", words)
-
-        // Es necesario hacer una nueva version:
-        book.set("newVersion", true)
         response.success()
 
     }else{
 
-        request.object.set("newVersion", false)
+        book.set("newVersion", false)
+        book.set("updateData", false)
         response.success()
 
     }
@@ -52,23 +40,25 @@ Parse.Cloud.beforeSave("Book", function(request, response) {
 Parse.Cloud.afterSave("Book", function(request) {
 
     // Guardar una Revision con los campos repetidos del libro que se acaba de guardar, hacerlo si es nuevo y si es un update.
-
     // Hacer esto solo cuando los campos "metadata" han sido modificadoss. 
+
+    // Obtener los datos para guardarlos:
+
+    var title = request.object.get("title")
+    var subtitle = request.object.get("subtitle")
+    var authors = request.object.get("authors")
+    // var words = request.object.get("words")
+
 
     if ( request.object.get("newVersion") ){
 
         // duplicar los campos:
         var bookVersion = new BookVersion()
 
-        var title = request.object.get("title")
-        var subtitle = request.object.get("subtitle")
-        var authors = request.object.get("authors")
-        var words = request.object.get("words")
-
         bookVersion.set("title", title)
         bookVersion.set("subtitle", subtitle)
         bookVersion.set("authors", authors)
-        bookVersion.set("words", words)
+        // bookVersion.set("words", words)
 
         // Si es un nuevo libro, poner la version de el libro y el BookVersion en 0:
         if (!request.object.existed()) {
@@ -89,13 +79,65 @@ Parse.Cloud.afterSave("Book", function(request) {
         request.object.set("current", bookVersion)
 
         bookVersion.save().then(function  (bookVersion) {
-            
+
             request.object.save()
 
         }, function (error) {
            console.log(error)
         })
 
+    }
+
+    // Los datos se actualizaron, pero no es necesario crear una nueva version 
+    if ( request.object.get("updatedData") ) {
+
+        // Enviar datos para busqueda a Swiftype, hay que tomar en cuenta que las ediciones/versiones/actualizaciones deben modificar el valor que esta en swiftype, solo un nuevo libro hace un 'document'
+
+        /*curl -X POST 'https://api.swiftype.com/api/v1/engines/findbooks/document_types/books/documents/create_or_update.json' \
+        -H 'Content-Type: application/json' \
+        -d '{
+              "auth_token": "D7fDZNDrvLEh9XDfCqeB",
+              "document": {
+                "external_id": "2",
+                "fields": [
+                    {"name": "title", "value": "my new title", "type": "string"},
+                    {"name": "page_type", "value": "user", "type": "enum"}
+                ]}
+              }'*/
+
+        Parse.Cloud.httpRequest({
+            method: 'POST',
+            url: 'https://api.swiftype.com/api/v1/engines/findbooks/document_types/books/documents/create_or_update.json',
+            headers: {
+                'Content-Type': 'application/json;charset=utf-8'
+            },
+            body: {
+                auth_token: 'D7fDZNDrvLEh9XDfCqeB',
+                document: {
+                    "external_id": request.object.id,
+                    "fields": [
+                        {   "name": "title",
+                            "value": title,
+                            "type": "string"
+                        },
+                        {   "name": "subtitle",
+                            "value": subtitle,
+                            "type": "string"
+                        },
+                        {   "name": "authors",
+                            "value": authors, 
+                            "type": "string"
+                        }
+                    ]
+                }
+            },
+            success: function(httpResponse) {
+                console.log(httpResponse.text)
+            },
+            error: function(httpResponse) {
+                console.error('Swiftype: ' + httpResponse.text)
+            }
+        })
 
     }
 
