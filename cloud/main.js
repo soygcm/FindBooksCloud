@@ -1,5 +1,6 @@
 var _ = require('underscore')
 var fb = require('cloud/pattern-order.js')
+var keys = require('cloud/keys.js')
 
 var Book = Parse.Object.extend("Book")
 var BookVersion = Parse.Object.extend("BookVersion")
@@ -9,30 +10,63 @@ Parse.Cloud.beforeSave("Book", function(request, response) {
 
     // Comprimir y cortar la imagen de los libros:;
 
-    var book = request.object;
+    var book = request.object
 
-    if (    request.object.dirty("title")    
-         || request.object.dirty("subtitle")
-         || request.object.dirty("authors")     ){
+    var title               = book.dirty("title")
+    var subtitle            = book.dirty("subtitle")
+    var authors             = book.dirty("authors")
+    var publisher           = book.dirty('publisher')
+    var publishedDate       = book.dirty('publishedDate')
+    var description         = book.dirty('description')
+    var industryIdentifiers = book.dirty('industryIdentifiers')
 
-        if (!request.object.get("noVersion")) {
-            // Es necesario hacer una nueva version:
-            book.set("newVersion", true)
-        }else{
-            book.set("newVersion", false)
-        }
+    var imageThumbnail      = book.dirty('imageThumbnail')
+    var image               = book.dirty('image')
+    var imageMedium         = book.dirty('imageMedium')
+    var imageLinks          = book.dirty('imageLinks')
 
-        book.set("updatedData", true)
+    var mainCategory        = book.dirty('mainCategory')
+    var categories          = book.dirty('categories')
+    var verageRating        = book.dirty('verageRating')
+    var ratingsCount        = book.dirty('ratingsCount')
+    var language            = book.dirty('language')
+    var bookbinding         = book.dirty('bookbinding')
 
-        response.success()
+    // Nueva Version necesaria *NV campos sucios:
+    var newVersion = (title || subtitle || authors || publisher || publishedDate || description || industryIdentifiers || imageLinks || imageThumbnail || image || imageMedium)
 
-    }else{
+    // Campos sucios para la version
+    var dirtyFields = new Array()
+    var fields = ['title' , 'subtitle' , 'authors' , 'publisher' , 'publishedDate' , 'description' , 'industryIdentifiers' , 'imageLinks' , 'imageThumbnail' , 'image' , 'imageMedium']
 
-        book.set("newVersion", false)
-        book.set("updateData", false)
-        response.success()
-
+    for (var i = fields.length - 1; i >= 0; i--) {
+        // var dirtyField = {field:"", dirty:false}
+        var dirtyField = {}
+        dirtyField.field = fields[i]
+        dirtyField.dirty = book.dirty(fields[i])
+        dirtyFields.push(dirtyField)
     }
+
+    book.set("dirty", dirtyFields)
+
+    // Motor de Busqueda *SE campos: 
+    var newSearchData = (title || subtitle  || authors || publisher || publishedDate || description || industryIdentifiers || mainCategory || categories || verageRating || ratingsCount || language || bookbinding)
+
+    // crear nueva version solo si algun campo de nueva version esta sucio, pero si el campo noVersion es verdadero entonces no crea una nueva version
+    if ( newVersion && !book.get("noVersion") ){
+        book.set("newVersion", true)
+    }else{
+        book.set("newVersion", false)
+    }
+
+    // actualizar los datos de busqueda solo si los newSearchData campos estan sucios
+    if ( newSearchData ){
+        book.set("newSearchData", true)
+    }else{
+        book.set("newSearchData", false)
+    }
+
+    response.success()
 
 })
 
@@ -44,44 +78,42 @@ Parse.Cloud.afterSave("Book", function(request) {
 
     // Obtener los datos para guardarlos:
 
-    var title = request.object.get("title")
-    var subtitle = request.object.get("subtitle")
-    var authors = request.object.get("authors")
-    // var words = request.object.get("words")
+    var book = request.object
+    var dirty = book.get("dirty")
 
-
-    if ( request.object.get("newVersion") ){
+    if ( book.get("newVersion") ){
 
         // duplicar los campos:
+        // var newVersionData =  ['title', 'subtitle', 'authors', 'publisher', 'publishedDate', 'description', 'industryIdentifiers', 'imageThumbnail', 'image', 'imageMedium', 'imageLinks']
+
         var bookVersion = new BookVersion()
 
-        bookVersion.set("title", title)
-        bookVersion.set("subtitle", subtitle)
-        bookVersion.set("authors", authors)
-        // bookVersion.set("words", words)
+        for (var i = dirty.length - 1; i >= 0; i--) {
+            if (dirty[i].dirty){
+                bookVersion.set(dirty[i].field, book.get( dirty[i].field ))
+            }
+        }
 
         // Si es un nuevo libro, poner la version de el libro y el BookVersion en 0:
-        if (!request.object.existed()) {
+        if (!book.existed()) {
             bookVersion.set("version", 0)
-            request.object.set("version", 0)
+            book.set("version", 0)
 
         }
 
         // Si es un update de un libro, se aumenta la version en +1:
         else{
-            var version = request.object.get("version")
+            var version = book.get("version")
             bookVersion.set("version", version+1)
-            request.object.set("version", version+1)
+            book.set("version", version+1)
 
         }
 
-        bookVersion.set("book", new Book({id: request.object.id}) )
-        request.object.set("current", bookVersion)
+        bookVersion.set("book", new Book({id: book.id}) )
+        book.set("current", bookVersion)
 
         bookVersion.save().then(function  (bookVersion) {
-
-            request.object.save()
-
+            book.save()
         }, function (error) {
            console.log(error)
         })
@@ -89,21 +121,29 @@ Parse.Cloud.afterSave("Book", function(request) {
     }
 
     // Los datos se actualizaron, pero no es necesario crear una nueva version 
-    if ( request.object.get("updatedData") ) {
+    if ( book.get("newSearchData") ) {
 
         // Enviar datos para busqueda a Swiftype, hay que tomar en cuenta que las ediciones/versiones/actualizaciones deben modificar el valor que esta en swiftype, solo un nuevo libro hace un 'document'
 
-        /*curl -X POST 'https://api.swiftype.com/api/v1/engines/findbooks/document_types/books/documents/create_or_update.json' \
-        -H 'Content-Type: application/json' \
-        -d '{
-              "auth_token": "D7fDZNDrvLEh9XDfCqeB",
-              "document": {
-                "external_id": "2",
-                "fields": [
-                    {"name": "title", "value": "my new title", "type": "string"},
-                    {"name": "page_type", "value": "user", "type": "enum"}
-                ]}
-              }'*/
+        var title                 = book.get("title")
+        var subtitle              = book.get("subtitle") || ""
+        var authors               = book.get("authors") || []
+        var publisher             = book.get('publisher') || ""
+        var publishedDate         = book.get('publishedDate') || ""
+        var description           = book.get('description') || ""
+        var industryIdentifiers   = book.get('industryIdentifiers') || []
+        var verageRating          = book.get('verageRating') || 0
+        var ratingsCount          = book.get('ratingsCount') || 0
+        var language              = book.get('language') || ""
+        var bookbinding           = book.get('bookbinding') || ""
+        var categories            = book.get('categories') || []
+        var mainCategory          = book.get('mainCategory') || ""
+        var googleId              = book.has('idGBook')
+
+        industryIdentifiersData = new Array()
+        for (var i = industryIdentifiers.length - 1; i >= 0; i--) {
+            industryIdentifiersData.push( industryIdentifiers[i].identifier )
+        }
 
         Parse.Cloud.httpRequest({
             method: 'POST',
@@ -112,9 +152,9 @@ Parse.Cloud.afterSave("Book", function(request) {
                 'Content-Type': 'application/json;charset=utf-8'
             },
             body: {
-                auth_token: 'D7fDZNDrvLEh9XDfCqeB',
+                auth_token: keys.swiftype,
                 document: {
-                    "external_id": request.object.id,
+                    "external_id": book.id,
                     "fields": [
                         {   "name": "title",
                             "value": title,
@@ -127,15 +167,59 @@ Parse.Cloud.afterSave("Book", function(request) {
                         {   "name": "authors",
                             "value": authors, 
                             "type": "string"
+                        },
+                        {   "name": "publisher",
+                            "value": publisher, 
+                            "type": "enum"
+                        },
+                        {   "name": "publishedDate",
+                            "value": publishedDate, 
+                            "type": "date"
+                        },
+                        {   "name": "description",
+                            "value": description, 
+                            "type": "text"
+                        },
+                        {   "name": "industryIdentifiers",
+                            "value": industryIdentifiersData, 
+                            "type": "string"
+                        },
+                        {   "name": "verageRating",
+                            "value": verageRating, 
+                            "type": "float"
+                        },
+                        {   "name": "ratingsCount",
+                            "value": ratingsCount, 
+                            "type": "integer"
+                        },
+                        {   "name": "language",
+                            "value": language, 
+                            "type": "enum"
+                        },
+                        {   "name": "bookbinding",
+                            "value": bookbinding, 
+                            "type": "enum"
+                        },
+                        {   "name": "categories",
+                            "value": categories, 
+                            "type": "string"
+                        },
+                        {   "name": "mainCategory",
+                            "value": mainCategory, 
+                            "type": "string"
+                        },
+                        {   "name": "googleId",
+                            "value": googleId, 
+                            "type": "enum"
                         }
                     ]
                 }
             },
             success: function(httpResponse) {
-                console.log(httpResponse.text)
+                console.log('Swiftype: ' + httpResponse.text)
             },
             error: function(httpResponse) {
-                console.error('Swiftype: ' + httpResponse.text)
+                console.error('Swiftype Error: ' + httpResponse.text)
             }
         })
 
@@ -150,27 +234,7 @@ Parse.Cloud.define("search", function(request, response) {
 	this.bookCollection.query = request.params.query
     this.bookCollection.fetch({
         success:function(collection, existent){
-
-            // if (existent >= collection.length) {
-
-            //     console.log("------ ahorrar un request")
-            //     response.success(collection)
-
-            // }else{
-
-                Parse.Object.saveAll(collection, {
-                    success: function(list) {
-                        response.success(collection)
-                    },
-                    error: function(error) {
-                        response.error(error)
-                    },
-                })
-
-            // }
-
-        	
-
+            response.success(collection)
         },
         error: function (collection, error) {
         	response.error("no results search")
@@ -185,14 +249,15 @@ var BookCollection = Parse.Collection.extend({
     successParse: false,
     successGoogle: false,
     preExistent: 0,
-    url: "https://www.googleapis.com/books/v1/volumes",
+    urlGoogle: "https://www.googleapis.com/books/v1/volumes",
+    urlSwiftype: 'https://api.swiftype.com/api/v1/engines/findbooks/document_types/books/search.json',
     fetch: function(options) {
         var self = this
         var options = options || {}
 
         //Get Google
         Parse.Cloud.httpRequest({
-			url : this.url,
+			url : this.urlGoogle,
 			params: {
 				q : this.query,
 				maxResults	: 5
@@ -201,39 +266,62 @@ var BookCollection = Parse.Collection.extend({
 				'Content-Type': 'application/json;charset=utf-8'
 			},
 			success: function(httpResponse) {
-				self.fetchCallback(httpResponse.data, options)
+				self.googleSuccess(httpResponse.data, options)
 			},
 			error: function(httpResponse) {
 				console.error('Request failed with response code ' + httpResponse.status)
 			}
 		})
 
-        //Get Parse 
-        var query = new Parse.Query(Book)
-
-        var words = this.query.split(/\s+/)
-        words = _.map(words, fb.removeDiacritics)
-        words = _.map(words, fb.toLowerCase) 
-
-        // query.matches("title", fb.makePattern(this.query))
-        query.containsAll("words", words)
-
-        query.doesNotExist("idGBook")
-        query.find({
-
-            success: function(results) {
-                // results = fb.orderResults(results, self.query)
-                results.splice(5, results.length)
-                self.add(results)
-                self.preExistent += results.length
-                self.successParse = true
-                self.successEnd(options)
+        // Buscar en Swiftype
+        // filters : { "books": {"googleId":false} }
+        Parse.Cloud.httpRequest({
+            method: 'POST',
+            url: 'https://api.swiftype.com/api/v1/engines/findbooks/document_types/books/search.json',
+            headers: {
+                'Content-Type': 'application/json;charset=utf-8'
             },
+            body: {
+                auth_token: 'D7fDZNDrvLEh9XDfCqeB',
+                q: this.query,
+                per_page: 5
+            },
+            success: function(httpResponse) {
 
-            error: function(error) {
-                alert("Error: " + error.code + " " + error.message)
+                console.log("Search Swiftype Done")
+                
+                var books = httpResponse.data.records.books
+                var ids = new Array()
+
+                for (var i = 0, end = books.length; i < end; i++) {
+                    ids.push(books[i].external_id)
+                }
+
+                //Get Parse 
+                var query = new Parse.Query(Book)
+
+                query.containedIn("objectId", ids)
+                query.doesNotExist("idGBook")
+
+                query.find({
+
+                    success: function(results) {
+                        self.add(results)
+                        self.preExistent += results.length
+                        self.successParse = true
+                        self.successEnd(options)
+                    },
+
+                    error: function(error) {
+                        alert("Error: " + error.code + " " + error.message)
+                    }
+
+                })
+        
+            },
+            error: function(httpResponse) {
+                console.error('Search Swiftype Error ' + httpResponse.text)
             }
-
         })
         
 
@@ -241,7 +329,18 @@ var BookCollection = Parse.Collection.extend({
 
     successEnd: function(options){
         if(this.successParse && this.successGoogle){
-            options.success(this, this.preExistent)
+
+
+            Parse.Object.saveAll(this.models, {
+                success: function(list) {
+                    options.success(this)
+                },
+                error: function(error) {
+                    options.error(error)
+                },
+            })
+
+            
         }
     },
 
@@ -254,49 +353,48 @@ var BookCollection = Parse.Collection.extend({
         return googleIds
     },
 
-    //request Google Books Success
-    fetchCallback: function(response, options) {
+    //google Success
+    googleSuccess: function(googleResults, options) {
+
+        var googleBooks = googleResults.items
 
         var self = this
-        var googleIds = this.googleIds(response)
+        var googleIds = this.googleIds(googleResults)
 
 		var query = new Parse.Query(Book)
 		query.containedIn("idGBook", googleIds)
-		query.find().then(function(results) {
+		query.find().then(function(parseBooks) {
 
-			// console.log("2 ------ FB: finding existents: "+ results.length)
+			//Insertar libros de parse a la busqueda de google
+			for (var i = 0, endI = parseBooks.length; i < endI; i++) {
+				
+                var parseBook = parseBooks[i]
 
-			//Increment existent books and Replace into search
-			for (var i = 0, endI = results.length; i < endI; i++) {
-				var newBook = results[i]
-
-				for (var j = 0, endJ = response.items.length; j < endJ; j++) {
-        			var book = response.items[j]
-
-                    if (!(book instanceof Book) && book.id == newBook.get('idGBook')) {
-                        response.items[j] = newBook
+				for (var j = 0, endJ = googleBooks.length; j < endJ; j++) {
+        			
+                    var book = googleBooks[j]
+                    if (!(book instanceof Book) && book.id == parseBook.get('idGBook')) {
+                        googleBooks[j] = parseBook
                     }
         		}
 			}
 
-
-			//Add books to the collection (pre existents and news)
+			//Agregar libros a la collection (pre existentes y nuevos)
 			var existent = 0
 
-			for (var i = 0, end = response.items.length; i < end; i++) {
-        		var book = response.items[i]
+			for (var i = 0, end = googleBooks.length; i < end; i++) {
+        		
+                var googleBook = googleBooks[i]
         		var newBook
         		
-        		if (book instanceof Book) {
-        			newBook = book
+        		if (googleBook instanceof Book) {
+        			newBook = googleBook
         			existent++
         		}else{
-        			newBook = self.newBookFromGoogle(book)
+        			newBook = self.newBookFromGoogle(googleBook)
         		}
             	self.add(newBook)
         	}
-
-        	// console.log("5 ------ FB: previous existent: "+ existent)
         
         	self.successGoogle = true
             self.preExistent += existent
@@ -313,6 +411,8 @@ var BookCollection = Parse.Collection.extend({
     newBookFromGoogle: function (book) {
 
     	var newBook = new Book()
+
+        newBook.set('idGBook',  book.id)
     	
 		if (typeof(book.volumeInfo.title) != "undefined"){
 		    newBook.set('title', book.volumeInfo.title)
@@ -329,7 +429,6 @@ var BookCollection = Parse.Collection.extend({
         if (typeof(book.volumeInfo.publishedDate) != "undefined"){
                 newBook.set('publishedDate', new Date(book.volumeInfo.publishedDate))
                 newBook.set('publishedDateString', book.volumeInfo.publishedDate)
-
         }
         if (typeof(book.volumeInfo.description) != "undefined"){
             newBook.set('description', book.volumeInfo.description)
@@ -346,16 +445,16 @@ var BookCollection = Parse.Collection.extend({
         if (typeof(book.volumeInfo.verageRating) != "undefined"){
             newBook.set('verageRating', book.volumeInfo.verageRating)
         }
-        if (typeof(book.volumeInfo.integer) != "undefined"){
-            newBook.set('integer', book.volumeInfo.integer)
+        if (typeof(book.volumeInfo.ratingsCount) != "undefined"){
+            newBook.set('ratingsCount', book.volumeInfo.ratingsCount)
         }
         if (typeof(book.volumeInfo.language) != "undefined"){
             newBook.set('language', book.volumeInfo.language)
         }
 
-        if (typeof(book.id) != "undefined"){
-            newBook.set('idGBook',  book.id)
-        }
+        
+        
+
 
         // Aqui en el futuro estos datos seran Relaciones en el modelo de datos:
         if (typeof(book.volumeInfo.categories) != "undefined"){
