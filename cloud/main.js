@@ -40,7 +40,6 @@ Parse.Cloud.beforeSave("Book", function(request, response) {
     var fields = ['title' , 'subtitle' , 'authors' , 'publisher' , 'publishedDate' , 'description' , 'industryIdentifiers' , 'imageLinks' , 'imageThumbnail' , 'image' , 'imageMedium']
 
     for (var i = fields.length - 1; i >= 0; i--) {
-        // var dirtyField = {field:"", dirty:false}
         var dirtyField = {}
         dirtyField.field = fields[i]
         dirtyField.dirty = book.dirty(fields[i])
@@ -120,7 +119,7 @@ Parse.Cloud.afterSave("Book", function(request) {
 
     }
 
-    // Los datos se actualizaron, pero no es necesario crear una nueva version 
+    // Los datos se actualizaron y hay que actualizarlos en el Search Engine 
     if ( book.get("newSearchData") ) {
 
         // Enviar datos para busqueda a Swiftype, hay que tomar en cuenta que las ediciones/versiones/actualizaciones deben modificar el valor que esta en swiftype, solo un nuevo libro hace un 'document'
@@ -230,14 +229,19 @@ Parse.Cloud.afterSave("Book", function(request) {
 
 Parse.Cloud.define("search", function(request, response) {
 
-	this.bookCollection = new BookCollection()
-	this.bookCollection.query = request.params.query
-    this.bookCollection.fetch({
-        success:function(collection, existent){
+	bookCollection = new BookCollection()
+    bookCollection.query = request.params.query
+    bookCollection.fetch({
+        success:function(collection){
+
+            console.log("success fetch: "+ collection.length )
+
             response.success(collection)
+
+
         },
         error: function (collection, error) {
-        	response.error("no results search")
+        	response.error(error)
         }
     })
 
@@ -269,6 +273,10 @@ var BookCollection = Parse.Collection.extend({
 				self.googleSuccess(httpResponse.data, options)
 			},
 			error: function(httpResponse) {
+
+                self.successGoogle = true
+                self.successEnd(options)
+
 				console.error('Request failed with response code ' + httpResponse.status)
 			}
 		})
@@ -287,8 +295,6 @@ var BookCollection = Parse.Collection.extend({
                 per_page: 5
             },
             success: function(httpResponse) {
-
-                console.log("Search Swiftype Done")
                 
                 var books = httpResponse.data.records.books
                 var ids = new Array()
@@ -313,13 +319,20 @@ var BookCollection = Parse.Collection.extend({
                     },
 
                     error: function(error) {
-                        alert("Error: " + error.code + " " + error.message)
+
+                        self.successParse = true
+                        self.successEnd(options)
+
+                        console.error("Error: " + error.code + " " + error.message)
                     }
 
                 })
         
             },
             error: function(httpResponse) {
+                self.successParse = true
+                self.successEnd(options)
+
                 console.error('Search Swiftype Error ' + httpResponse.text)
             }
         })
@@ -330,10 +343,15 @@ var BookCollection = Parse.Collection.extend({
     successEnd: function(options){
         if(this.successParse && this.successGoogle){
 
+            console.log("successEnd")
+
+            self = this;
 
             Parse.Object.saveAll(this.models, {
                 success: function(list) {
-                    options.success(this)
+
+                    options.success(self)
+
                 },
                 error: function(error) {
                     options.error(error)
