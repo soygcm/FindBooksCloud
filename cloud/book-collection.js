@@ -1,6 +1,6 @@
 var Book = Parse.Object.extend("Book")
 
-exports = Parse.Collection.extend({
+exports.BookCollection = Parse.Collection.extend({
     model: Book,
     query: '',
     successParse: false,
@@ -43,9 +43,12 @@ exports = Parse.Collection.extend({
                 'Content-Type': 'application/json;charset=utf-8'
             },
             body: {
-                auth_token: 'D7fDZNDrvLEh9XDfCqeB',
-                q: this.query,
-                per_page: 5
+                "auth_token":   'D7fDZNDrvLEh9XDfCqeB',
+                "q":            this.query,
+                "per_page":     5,
+                "filters":      {
+                    "googleId": false
+                }
             },
             success: function(httpResponse) {
                 
@@ -96,14 +99,30 @@ exports = Parse.Collection.extend({
     successEnd: function(options){
         if(this.successParse && this.successGoogle){
 
-            console.log("successEnd")
-
+            // Hacer una nueva coleccion y guardarla para devolverla
             self = this;
 
             Parse.Object.saveAll(this.models, {
                 success: function(list) {
 
-                    options.success(self)
+                    var ids = new Array()
+                    for (var i = 0, end = list.length; i < end; i++) {
+                        console.log(list[i].id)
+                        ids.push( list[i].id )
+                    }
+
+                    var ResultCollection = Parse.Collection.extend({
+                        model: Book,
+                        query: (new Parse.Query(Book)).containedIn("objectId", ids)
+                    })
+                    var collection = new ResultCollection()
+                    collection.add(list)
+
+                    collection.fetch({
+                        success: function (list){
+                            options.success(collection)
+                        }
+                    });
 
                 },
                 error: function(error) {

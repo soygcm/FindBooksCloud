@@ -1,3 +1,6 @@
+var BookVersion = Parse.Object.extend("BookVersion")
+var Book = Parse.Object.extend("Book")
+
 Parse.Cloud.beforeSave("Book", function(request, response) {
 
     // Comprimir y cortar la imagen de los libros:;
@@ -27,36 +30,65 @@ Parse.Cloud.beforeSave("Book", function(request, response) {
     // Nueva Version necesaria *NV campos sucios:
     var newVersion = (title || subtitle || authors || publisher || publishedDate || description || industryIdentifiers || imageLinks || imageThumbnail || image || imageMedium)
 
-    // Campos sucios para la version
-    var dirtyFields = new Array()
+    // crear nueva version solo si algun campo de nueva version esta sucio, pero si el campo noVersion es verdadero entonces no crea una nueva version.
+    // Si el libro es nuevo tampoco crea una nueva Version.
+    newVersion =  newVersion && !book.get("noVersion") && !book.isNew()
+
+    // verificar si estos campos estan sucios para la version
+    var dirty = new Array()
     var fields = ['title' , 'subtitle' , 'authors' , 'publisher' , 'publishedDate' , 'description' , 'industryIdentifiers' , 'imageLinks' , 'imageThumbnail' , 'image' , 'imageMedium']
 
     for (var i = fields.length - 1; i >= 0; i--) {
         var dirtyField = {}
         dirtyField.field = fields[i]
         dirtyField.dirty = book.dirty(fields[i])
-        dirtyFields.push(dirtyField)
+        dirty.push(dirtyField)
     }
-
-    book.set("dirty", dirtyFields)
 
     // Motor de Busqueda *SE campos: 
+    // actualizar los datos de busqueda solo si los newSearchData campos estan sucios
     var newSearchData = (title || subtitle  || authors || publisher || publishedDate || description || industryIdentifiers || mainCategory || categories || verageRating || ratingsCount || language || bookbinding)
 
-    // crear nueva version solo si algun campo de nueva version esta sucio, pero si el campo noVersion es verdadero entonces no crea una nueva version
-    if ( newVersion && !book.get("noVersion") ){
-        book.set("newVersion", true)
-    }else{
-        book.set("newVersion", false)
-    }
+    book.set("newSearchData", newSearchData)
 
-    // actualizar los datos de busqueda solo si los newSearchData campos estan sucios
-    if ( newSearchData ){
-        book.set("newSearchData", true)
-    }else{
-        book.set("newSearchData", false)
-    }
+    // --------------------------------------------------
 
-    response.success()
+    // Guardar una Revision con los campos repetidos del libro que se acaba de guardar, hacerlo si es nuevo y si es un update.
+    // Hacer esto solo cuando los campos "metadata" han sido modificadoss. 
+
+    // Obtener los datos para guardarlos:
+
+    if ( newVersion ){
+
+        // duplicar los campos:
+        // solo duplica los campos sucios
+
+        var bookVersion = new BookVersion()
+
+        for (var i = dirty.length - 1; i >= 0; i--) {
+            if (dirty[i].dirty){
+                bookVersion.set(dirty[i].field, book.get( dirty[i].field ))
+            }
+        }
+
+		// se aumenta la version en +1:
+        
+        var version = book.get("version") || 0
+        bookVersion.set("version", version+1)
+        book.set("version", version+1)
+
+        bookVersion.set("book", new Book({id: book.id}) )
+        book.set("current", bookVersion)
+
+        bookVersion.save().then(function  (bookVersion) {
+          	response.success()
+        }, function (error) {
+          	console.log(error)
+          	response.error(error)
+        })
+
+    }else{
+    	response.success()
+    }
 
 })

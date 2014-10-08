@@ -1,63 +1,6 @@
-var _ = require('underscore')
-var fb = require('cloud/pattern-order.js')
-var keys = require('cloud/keys.js')
-
-var Book = Parse.Object.extend("Book")
-var BookVersion = Parse.Object.extend("BookVersion")
-
-var beforeSaveBook = require('cloud/before-save-book.js')
-var BookCollection = require('cloud/book-collection.js')
-var searchFunction = require('cloud/search.js')
-
-
 Parse.Cloud.afterSave("Book", function(request) {
 
-    // Guardar una Revision con los campos repetidos del libro que se acaba de guardar, hacerlo si es nuevo y si es un update.
-    // Hacer esto solo cuando los campos "metadata" han sido modificadoss. 
-
-    // Obtener los datos para guardarlos:
-
     var book = request.object
-    var dirty = book.get("dirty")
-
-    if ( book.get("newVersion") ){
-
-        // duplicar los campos:
-        // var newVersionData =  ['title', 'subtitle', 'authors', 'publisher', 'publishedDate', 'description', 'industryIdentifiers', 'imageThumbnail', 'image', 'imageMedium', 'imageLinks']
-
-        var bookVersion = new BookVersion()
-
-        for (var i = dirty.length - 1; i >= 0; i--) {
-            if (dirty[i].dirty){
-                bookVersion.set(dirty[i].field, book.get( dirty[i].field ))
-            }
-        }
-
-        // Si es un nuevo libro, poner la version de el libro y el BookVersion en 0:
-        if (!book.existed()) {
-            bookVersion.set("version", 0)
-            book.set("version", 0)
-
-        }
-
-        // Si es un update de un libro, se aumenta la version en +1:
-        else{
-            var version = book.get("version")
-            bookVersion.set("version", version+1)
-            book.set("version", version+1)
-
-        }
-
-        bookVersion.set("book", new Book({id: book.id}) )
-        book.set("current", bookVersion)
-
-        bookVersion.save().then(function  (bookVersion) {
-            book.save()
-        }, function (error) {
-           console.log(error)
-        })
-
-    }
 
     // Los datos se actualizaron y hay que actualizarlos en el Search Engine 
     if ( book.get("newSearchData") ) {
@@ -165,8 +108,3 @@ Parse.Cloud.afterSave("Book", function(request) {
     }
 
 })
-
-
-
-
-
