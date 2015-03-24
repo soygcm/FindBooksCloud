@@ -12,8 +12,7 @@ Parse.Cloud.define("search", function(request, response) {
             console.log("success fetch: "+ collection.length )
 
             response.success(collection)
-
-
+            
         },
         error: function (collection, error) {
         	response.error(error)

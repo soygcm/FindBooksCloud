@@ -3,7 +3,7 @@ var Book = Parse.Object.extend("Book")
 exports.BookCollection = Parse.Collection.extend({
     model: Book,
     query: '',
-    successParse: false,
+    successParse: true,
     successGoogle: false,
     preExistent: 0,
     urlGoogle: "https://www.googleapis.com/books/v1/volumes",
@@ -34,6 +34,7 @@ exports.BookCollection = Parse.Collection.extend({
 			}
 		})
 
+        /*
         // Buscar en Swiftype
         // filters : { "books": {"googleId":false} }
         Parse.Cloud.httpRequest({
@@ -91,7 +92,7 @@ exports.BookCollection = Parse.Collection.extend({
 
                 console.error('Search Swiftype Error ' + httpResponse.text)
             }
-        })
+        })*/
         
 
     },
