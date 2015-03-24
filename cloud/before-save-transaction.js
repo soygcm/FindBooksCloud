@@ -177,12 +177,15 @@ function sendPushAcceptTransaction(transaction, response){
 
 Parse.Cloud.afterSave("Transaction", function(request) {
 
-    
+    response = {
+        error: function(e){
+            
+        },
+        success: function(){
+            
+        }
+    }
 
-})
-
-Parse.Cloud.beforeSave("Transaction", function(request, response) {
-    
     /**
     * el dueño de la transaction son los usuarios en cuestion
     */
@@ -199,7 +202,7 @@ Parse.Cloud.beforeSave("Transaction", function(request, response) {
     var want = transaction.get("bookWant")
     var offer = transaction.get("bookOffer")
 
-    if(transaction.isNew()){
+    if(!transaction.existed()){
 
         want.increment("transactionCount")
         offer.increment("transactionCount")
@@ -210,7 +213,6 @@ Parse.Cloud.beforeSave("Transaction", function(request, response) {
 
                 sendPushNewTransaction(transaction, response)
 
-                // response.success()
             },
             error: function(e){
                 console.log(e)
@@ -258,6 +260,11 @@ Parse.Cloud.beforeSave("Transaction", function(request, response) {
         }
         
     }
-    
 
 })
+
+/*Parse.Cloud.beforeSave("Transaction", function(request, response) {
+    
+
+
+})*/
