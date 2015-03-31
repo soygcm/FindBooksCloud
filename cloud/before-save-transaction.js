@@ -179,10 +179,10 @@ Parse.Cloud.afterSave("Transaction", function(request) {
 
     response = {
         error: function(e){
-            
+
         },
         success: function(){
-            
+
         }
     }
 
@@ -225,15 +225,28 @@ Parse.Cloud.afterSave("Transaction", function(request) {
         var endedWant = transaction.get("endedWant")
         var endedOffer = transaction.get("endedOffer")
 
+        // var endedWantPrev = transaction.previous("endedWant")
+        // var endedOfferPrev = transaction.previous("endedOffer")
+
+        // console.log("endedWantPrev: "+endedWantPrev+", endedOfferPrev: "+endedOfferPrev)
+
+        // var endedWant = endedWant != endedWantPrev
+        // var endedOffer = endedOffer != endedOfferPrev
+
         var accepted = transaction.get("accepted")
 
-        if(endedWant || endedOffer){   
-            if (endedWant) {
-                want.increment("transactionCount", -1)
+        if(endedWant || endedOffer){  
+            if( endedWant != endedOffer ){
+                if (endedWant) {
+                    want.increment("transactionCount", -1)
+                }
+                if(endedOffer){
+                    offer.increment("transactionCount", -1)
+                }
+            }else{
+
             }
-            if(endedOffer){
-                offer.increment("transactionCount", -1)
-            }
+
             var myBooks = [want, offer]
             Parse.Object.saveAll(myBooks, {
                 success: function(l) {
@@ -263,8 +276,95 @@ Parse.Cloud.afterSave("Transaction", function(request) {
 
 })
 
-/*Parse.Cloud.beforeSave("Transaction", function(request, response) {
+Parse.Cloud.beforeSave("Transaction", function(request, response) {
     
+    
+    /**
+    * el dueño de la transaction son los usuarios en cuestion
+    */
+    Parse.Cloud.useMasterKey()
+    var transaction = request.object
 
+    /**
+    * Si es una transaccion nueva  
+    * Incrementar transactionCount de want y offer myBooks
+    * Si la transaccion se cierra
+    * descontar el contador?
+    */
 
-})*/
+    var want = transaction.get("bookWant")
+    var offer = transaction.get("bookOffer")
+
+    if(!transaction.existed()){
+
+        want.increment("transactionCount")
+        offer.increment("transactionCount")
+
+        var myBooks = [want, offer]
+        Parse.Object.saveAll(myBooks, {
+            success: function(l) {
+
+                sendPushNewTransaction(transaction, response)
+
+            },
+            error: function(e){
+                console.log(e)
+                response.error(e)
+            }
+        })
+
+    }else{
+
+        var endedWant = transaction.get("endedWant")
+        var endedOffer = transaction.get("endedOffer")
+
+        // var endedWantPrev = transaction.previous("endedWant")
+        // var endedOfferPrev = transaction.previous("endedOffer")
+
+        // console.log("endedWantPrev: "+endedWantPrev+", endedOfferPrev: "+endedOfferPrev)
+
+        // var endedWant = endedWant != endedWantPrev
+        // var endedOffer = endedOffer != endedOfferPrev
+
+        var accepted = transaction.get("accepted")
+
+        if(endedWant || endedOffer){  
+            if( endedWant != endedOffer ){
+                if (endedWant) {
+                    want.increment("transactionCount", -1)
+                }
+                if(endedOffer){
+                    offer.increment("transactionCount", -1)
+                }
+            }else{
+                
+            }
+
+            var myBooks = [want, offer]
+            Parse.Object.saveAll(myBooks, {
+                success: function(l) {
+
+                    if(endedWant ^ endedOffer){                    
+                        sendPushEndTransaction(transaction, response)
+                    }else{
+                        response.success()
+                    }
+
+                },
+                error: function(e){
+                    console.log(e)
+                    response.error(e)
+                }
+            })
+        }else if (accepted){
+
+            sendPushAcceptTransaction(transaction, response)
+
+            // response.success()
+        }else{
+            response.success()
+        }
+        
+    }
+
+})

@@ -9,7 +9,7 @@ Parse.Cloud.define("search", function(request, response) {
     bookCollection.fetch({
         success:function(collection){
 
-            console.log("success fetch: "+ collection.length )
+            // console.log("success fetch: "+ collection.length )
 
             response.success(collection)
             

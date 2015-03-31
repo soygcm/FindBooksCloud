@@ -108,7 +108,7 @@ exports.BookCollection = Parse.Collection.extend({
 
                     var ids = new Array()
                     for (var i = 0, end = list.length; i < end; i++) {
-                        console.log(list[i].id)
+                        // console.log(list[i].id)
                         ids.push( list[i].id )
                     }
 
