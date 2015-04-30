@@ -127,7 +127,7 @@ function sendPushEndTransaction(transaction, response){
 
             sendPush(transaction, userFrom, userTo, book, {
                 message: function(nickname, bookTitle){
-                    return nickname + " cancelo, la transacción del libro: "+ bookTitle
+                    return nickname + " canceló, la transacción del libro: "+ bookTitle
                 }},
                 response
             )
@@ -186,92 +186,20 @@ Parse.Cloud.afterSave("Transaction", function(request) {
         }
     }
 
-    /**
-    * el dueño de la transaction son los usuarios en cuestion
-    */
-    Parse.Cloud.useMasterKey()
     var transaction = request.object
 
     /**
-    * Si es una transaccion nueva  
-    * Incrementar transactionCount de want y offer myBooks
-    * Si la transaccion se cierra
-    * descontar el contador?
+    * Si es una transaccion nueva, enviar push
+    * La pregunta es si esto se hace en afterSave, 
+    * y no importa si la persona recibe o no la transacción
+    * La ventaja es que se puede enviar a la persona directo a
+    * la transacción como tal
     */
-
-    var want = transaction.get("bookWant")
-    var offer = transaction.get("bookOffer")
 
     if(!transaction.existed()){
 
-        want.increment("transactionCount")
-        offer.increment("transactionCount")
+        sendPushNewTransaction(transaction, response)
 
-        var myBooks = [want, offer]
-        Parse.Object.saveAll(myBooks, {
-            success: function(l) {
-
-                sendPushNewTransaction(transaction, response)
-
-            },
-            error: function(e){
-                console.log(e)
-                response.error(e)
-            }
-        })
-
-    }else{
-
-        var endedWant = transaction.get("endedWant")
-        var endedOffer = transaction.get("endedOffer")
-
-        // var endedWantPrev = transaction.previous("endedWant")
-        // var endedOfferPrev = transaction.previous("endedOffer")
-
-        // console.log("endedWantPrev: "+endedWantPrev+", endedOfferPrev: "+endedOfferPrev)
-
-        // var endedWant = endedWant != endedWantPrev
-        // var endedOffer = endedOffer != endedOfferPrev
-
-        var accepted = transaction.get("accepted")
-
-        if(endedWant || endedOffer){  
-            if( endedWant != endedOffer ){
-                if (endedWant) {
-                    want.increment("transactionCount", -1)
-                }
-                if(endedOffer){
-                    offer.increment("transactionCount", -1)
-                }
-            }else{
-
-            }
-
-            var myBooks = [want, offer]
-            Parse.Object.saveAll(myBooks, {
-                success: function(l) {
-
-                    if(endedWant ^ endedOffer){                    
-                        sendPushEndTransaction(transaction, response)
-                    }else{
-                        response.success()
-                    }
-
-                },
-                error: function(e){
-                    console.log(e)
-                    response.error(e)
-                }
-            })
-        }else if (accepted){
-
-            sendPushAcceptTransaction(transaction, response)
-
-            // response.success()
-        }else{
-            response.success()
-        }
-        
     }
 
 })
@@ -295,7 +223,7 @@ Parse.Cloud.beforeSave("Transaction", function(request, response) {
     var want = transaction.get("bookWant")
     var offer = transaction.get("bookOffer")
 
-    if(!transaction.existed()){
+    if(transaction.isNew()){
 
         want.increment("transactionCount")
         offer.increment("transactionCount")
@@ -303,9 +231,7 @@ Parse.Cloud.beforeSave("Transaction", function(request, response) {
         var myBooks = [want, offer]
         Parse.Object.saveAll(myBooks, {
             success: function(l) {
-
-                sendPushNewTransaction(transaction, response)
-
+                response.success()
             },
             error: function(e){
                 console.log(e)
@@ -328,16 +254,25 @@ Parse.Cloud.beforeSave("Transaction", function(request, response) {
 
         var accepted = transaction.get("accepted")
 
-        if(endedWant || endedOffer){  
+        if(endedWant || endedOffer){
             if( endedWant != endedOffer ){
                 if (endedWant) {
                     want.increment("transactionCount", -1)
+                    transaction.set("firstEndWant", true)
                 }
                 if(endedOffer){
                     offer.increment("transactionCount", -1)
+                    transaction.set("firstEndWant", false)
                 }
             }else{
                 
+                firstEndWant = transaction.get("firstEndWant")
+
+                if(firstEndWant){
+                    offer.increment("transactionCount", -1)
+                }else{
+                    want.increment("transactionCount", -1)
+                }
             }
 
             var myBooks = [want, offer]

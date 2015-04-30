@@ -1,3 +1,4 @@
+var keys = require("cloud/keys.js")
 Parse.Cloud.afterSave("Book", function(request) {
 
     var book = request.object
