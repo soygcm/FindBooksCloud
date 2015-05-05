@@ -74,81 +74,21 @@ function sendPushAllWants(myBook, response){
 
 Parse.Cloud.beforeSave("MyBook", function(request, response) {
 
-    Parse.Cloud.useMasterKey()
     var myBook = request.object
     var type = myBook.get("type")
 
-    /**
-     * Cuando es un Offer
-     * Si editan la info Agregar la info de precio al 'Book'
-     * Si es nuevo incrementar el contador de los 'Book'  
+    /*
+    * evitar precios undefined
     */
-    // if(type == "OFFER"){
+    if(type == "OFFER"){
+        var price = myBook.get("price")
 
-        var book = myBook.get("book")
-        var erase = myBook.get("delete")
-
-        var counter;
-        /*
-        * evitar precios undefined
-        */
-
-        if(type == "OFFER"){
-            var price = myBook.get("price")
-            // console.log("el precio es: "+price)
-            if (typeof price == 'undefined'){
-                myBook.set("price", 0)
-                // console.log("Precio redefinido a 0")
-            }else{
-                // console.log(price)
-                // console.log("el precio no es undefined?")
-            }
-            counter = "offersCount"
-        }else{
-            counter = "wantsCount"
+        if (typeof price == 'undefined'){
+            myBook.set("price", 0)
         }
+    }
 
-        // var deletedPrev = myBook.previous("deleted")
-        // var deleted = deleted != deletedPrev
-        // var nohaycambios = true
-
-        
-
-        if(myBook.isNew()){
-            
-            book.increment(counter)
-
-            book.save().then(function  (book) {
-                response.success()
-            }, function (error) {
-                console.log(error)
-                response.error(error)
-            })
-
-        }else if(erase){
-
-            book.increment(counter, -1)
-            
-            myBook.set("delete", false)
-
-            book.save().then(function  (book) {
-                response.success()
-            }, function (error) {
-                console.log(error)
-                response.error(error)
-            })
-
-        }else{
-
-            response.success()
-        }
-    // }else{
-        // response.success()
-    // }
-
-    /**
-    * transactionCount, no puede valer menos de 0
-    */
+    response.success()
 
 })
 
@@ -163,6 +103,7 @@ Parse.Cloud.afterSave("MyBook", function(request) {
 
     response = {
         error: function(e){
+            console.log(e)
         },
         success: function(){
         }
@@ -171,6 +112,12 @@ Parse.Cloud.afterSave("MyBook", function(request) {
     var myBook = request.object
     var type = myBook.get("type")
     var price = myBook.get("price")
+    var book = myBook.get("book")
+    // para solo contar al eliminar una vez y 
+    // no siempre que se modifique el myBook y 
+    // deleted sea true
+    var erase = myBook.get("delete")
+
 
     /**
     * Si es un myBook OFFER nuevo, enviar push
@@ -183,6 +130,34 @@ Parse.Cloud.afterSave("MyBook", function(request) {
 
     }
 
+    /**
+    * contar ofertas que "lo quiero"
+    */
+    var functionCount = "updateBookCounters"
+    var params = { id: book.id, type: type }        
+
+    if( !myBook.existed() ){
+
+        Parse.Cloud.run(functionCount, params).then(function() {
+            response.success()
+        }, response.error)
+        
+    }else if(erase){
+        
+        myBook.set("delete", false)
+
+        myBook.save().then(function(object) {
+            return Parse.Cloud.run(functionCount, params)
+        }, response.error).then(function(object) {
+            response.success()
+        }, response.error)
+
+    }
+
+
+    /**
+    * enviar push para 50k
+    */
     if(type == "OFFER"  && price == 0){
 
         var pubnub = {
@@ -219,9 +194,7 @@ Parse.Cloud.afterSave("MyBook", function(request) {
 
 
           },
-          error: function(error) {
-
-          }
+          error: response.error
         })
     }
 
